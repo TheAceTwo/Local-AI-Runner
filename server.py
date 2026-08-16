@@ -7,12 +7,14 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
 from tool_parser import parse_and_execute_tools
 
-app = FastAPI()
+# Extract dynamic version from container/build environment, defaulting to 'dev' locally
+APP_VERSION = os.getenv("APP_VERSION", "dev")
+
+app = FastAPI(title="AI Control Panel", version=APP_VERSION)
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434/api/chat")
 MODEL_NAME = os.getenv("MODEL_NAME", "qwen2.5-coder:7b")
 
-# SYSTEM PROMPT WITH FUNCTION CALLING SCHEMAS
 SYSTEM_PROMPT = """
 You are a Windows OS Automation and File Management Assistant.
 FILE ACCESS DIRECTORIES (Mounted Containers):
@@ -42,45 +44,10 @@ class ChatRequest(BaseModel):
     message: str | None = None
     prompt: str | None = None
 
-def execute_tool(tool_data: dict) -> str:
-    """Executes file operations directly on the container's mounted user_data volume."""
-    tool = tool_data.get("tool")
-    path = tool_data.get("path")
-    
-    # Path Traversal Safety Guard
-    if not path.startswith("/user_data"):
-        return "Error: File operation restricted outside of mounted /user_data folders."
-
-    try:
-        if tool == "write_file":
-            content = tool_data.get("content", "")
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
-            return f"✅ File successfully created/updated at: {path}"
-
-        elif tool == "read_file":
-            if not os.path.exists(path):
-                return f"Error: File at {path} does not exist."
-            with open(path, "r", encoding="utf-8") as f:
-                return f"📄 File Content of {path}:\n\n" + f.read()
-
-        elif tool == "delete_file":
-            if os.path.exists(path):
-                os.remove(path)
-                return f"🗑️ File successfully deleted at: {path}"
-            return f"Error: File at {path} does not exist."
-
-        elif tool == "list_files":
-            if os.path.exists(path):
-                files = os.listdir(path)
-                return f"📂 Directory contents of {path}:\n" + "\n".join(files)
-            return f"Error: Directory at {path} does not exist."
-
-        else:
-            return f"Error: Unknown tool function '{tool}'."
-    except Exception as e:
-        return f"Tool Execution Error: {str(e)}"
+@app.get("/api/version")
+async def get_version():
+    """Returns the container version injected by GitHub / Docker builds."""
+    return {"version": APP_VERSION}
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
@@ -107,23 +74,9 @@ async def chat(req: ChatRequest):
             res_data = response.json()
             
             raw_content = res_data.get("message", {}).get("content", "").strip()
+            
+            # Delegates all JSON parsing (raw or markdown block) directly to tool_parser.py
             cleaned_response = parse_and_execute_tools(raw_content)
-
-            # Check if LLM outputted a JSON tool request
-            if raw_content.startswith("{") and raw_content.endswith("}"):
-                try:
-                    tool_json = json.loads(raw_content)
-                    if "tool" in tool_json and "path" in tool_json:
-                        execution_result = execute_tool(tool_json)
-                        return {
-                            "response": execution_result,
-                            "metrics": {
-                                "eval_count": res_data.get("eval_count", 0),
-                                "prompt_eval_count": res_data.get("prompt_eval_count", 0)
-                            }
-                        }
-                except json.JSONDecodeError:
-                    pass # Not valid JSON tool call, treat as standard text output
 
             return {
                 "response": cleaned_response,
