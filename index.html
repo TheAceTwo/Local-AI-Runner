@@ -2,23 +2,87 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Local AI Control Panel</title>
     <style>
-        body { font-family: Segoe UI, sans-serif; background: #121212; color: #e0e0e0; margin: 0; padding: 20px; display: flex; gap: 20px; }
+        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: #e0e0e0; margin: 0; padding: 20px; display: flex; gap: 20px; }
         #sidebar { width: 280px; background: #1e1e1e; padding: 15px; border-radius: 8px; }
         #main { flex-grow: 1; display: flex; flex-direction: column; height: 90vh; }
         #chatbox { flex-grow: 1; background: #1e1e1e; border-radius: 8px; padding: 15px; overflow-y: auto; margin-bottom: 10px; font-family: monospace; }
         .msg { margin-bottom: 12px; }
         .user { color: #4da6ff; font-weight: bold; }
         .bot { color: #5cdb95; }
-        .system { color: #ffbd2e; italic; }
-        textarea { width: 100%; height: 60px; background: #2a2a2a; color: #fff; border: 1px solid #444; border-radius: 5px; padding: 8px; }
+        textarea { width: 100%; height: 60px; background: #2a2a2a; color: #fff; border: 1px solid #444; border-radius: 5px; padding: 8px; box-sizing: border-box; }
         button { background: #0078d4; color: white; border: none; padding: 10px 15px; margin-top: 5px; border-radius: 4px; cursor: pointer; width: 100%; }
         button:hover { background: #005a9e; }
         button:disabled { background: #444; cursor: not-allowed; }
         .btn-action { background: #3a3a3a; margin-bottom: 8px; text-align: left; }
         .btn-action:hover { background: #4a4a4a; }
         pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
+
+        /* Status Panel Floating Widget */
+        #status-panel {
+            position: fixed;
+            bottom: 15px;
+            left: 15px;
+            width: 320px;
+            background: #1e1e1e;
+            border: 1px solid #333;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            font-family: monospace;
+            font-size: 13px;
+            z-index: 1000;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        #status-header {
+            background: #252526;
+            padding: 8px 12px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .status-dot {
+            height: 9px;
+            width: 9px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            background-color: #888;
+        }
+
+        .status-dot.active { background-color: #e2a03f; animation: pulse 1.5s infinite; }
+        .status-dot.done { background-color: #5cdb95; }
+        .status-dot.error { background-color: #ff5555; }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
+        }
+
+        #status-details {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out, padding 0.3s ease;
+            background: #181818;
+            padding: 0 12px;
+            color: #aaa;
+        }
+
+        #status-panel.expanded #status-details {
+            max-height: 200px;
+            padding: 10px 12px;
+            border-top: 1px solid #2a2a2a;
+        }
+
+        #status-details p { margin: 4px 0; font-size: 12px; }
+        #status-details span { color: #fff; }
     </style>
 </head>
 <body>
@@ -36,7 +100,56 @@
     <button id="sendBtn" onclick="sendMessage()">Send Request</button>
 </div>
 
+<!-- Bottom-Left Status Indicator Widget -->
+<div id="status-panel">
+    <div id="status-header" onclick="toggleStatusPanel()">
+        <div>
+            <span id="status-dot" class="status-dot"></span>
+            <span id="status-text">Idle</span>
+        </div>
+        <span id="status-chevron">▲</span>
+    </div>
+    <div id="status-details">
+        <p>Model: <span id="stat-model">qwen2.5-coder:7b</span></p>
+        <p>Status: <span id="stat-phase">Awaiting Input</span></p>
+        <p>Elapsed: <span id="stat-time">0s</span></p>
+        <p>Eval Tokens: <span id="stat-eval">-</span></p>
+    </div>
+</div>
+
 <script>
+    let timerInterval = null;
+    let startTime = 0;
+
+    function toggleStatusPanel() {
+        const panel = document.getElementById('status-panel');
+        const chevron = document.getElementById('status-chevron');
+        panel.classList.toggle('expanded');
+        chevron.innerText = panel.classList.contains('expanded') ? '▼' : '▲';
+    }
+
+    function setStatus(phase, text, dotClass) {
+        document.getElementById('status-text').innerText = text;
+        document.getElementById('stat-phase').innerText = phase;
+        
+        const dot = document.getElementById('status-dot');
+        dot.className = 'status-dot ' + (dotClass || '');
+    }
+
+    function startTimer() {
+        startTime = Date.now();
+        document.getElementById('stat-time').innerText = '0s';
+        clearInterval(timerInterval);
+        timerInterval = setInterval(() => {
+            const seconds = Math.floor((Date.now() - startTime) / 1000);
+            document.getElementById('stat-time').innerText = `${seconds}s`;
+        }, 1000);
+    }
+
+    function stopTimer() {
+        clearInterval(timerInterval);
+    }
+
     async function sendMessage() {
         const input = document.getElementById('promptInput');
         const sendBtn = document.getElementById('sendBtn');
@@ -48,7 +161,9 @@
         input.disabled = true;
         sendBtn.disabled = true;
 
-        const loadingId = appendMsg('Agent', 'Processing request...');
+        setStatus('Processing Prompt', 'Evaluating context...', 'active');
+        document.getElementById('stat-eval').innerText = 'Processing...';
+        startTimer();
 
         try {
             const res = await fetch('/api/chat', {
@@ -57,14 +172,23 @@
                 body: JSON.stringify({prompt: text})
             });
 
-            if (!res.ok) {
-                throw new Error(`HTTP error! status: ${res.status}`);
-            }
-
             const data = await res.json();
-            updateMsg(loadingId, 'Agent', data.response || 'No response from model.');
+            stopTimer();
+
+            if (!res.ok || data.error) {
+                setStatus('Error', 'Execution Failed', 'error');
+                appendMsg('Agent', `Error: ${data.error || 'Server error'}`);
+            } else {
+                setStatus('Completed', 'Ready', 'done');
+                if (data.metrics) {
+                    document.getElementById('stat-eval').innerText = `${data.metrics.eval_count || 0} tokens`;
+                }
+                appendMsg('Agent', data.response);
+            }
         } catch (err) {
-            updateMsg(loadingId, 'Agent', `Error: ${err.message}`);
+            stopTimer();
+            setStatus('Network Error', 'Disconnected', 'error');
+            appendMsg('Agent', `Error: ${err.message}`);
         } finally {
             input.disabled = false;
             sendBtn.disabled = false;
@@ -80,20 +204,10 @@
     function appendMsg(sender, text) {
         const box = document.getElementById('chatbox');
         const div = document.createElement('div');
-        const msgId = 'msg-' + Date.now();
-        div.id = msgId;
         div.className = 'msg';
         div.innerHTML = `<span class="${sender.toLowerCase()}">${sender}:</span> <pre>${escapeHtml(text)}</pre>`;
         box.appendChild(div);
         box.scrollTop = box.scrollHeight;
-        return msgId;
-    }
-
-    function updateMsg(msgId, sender, text) {
-        const div = document.getElementById(msgId);
-        if (div) {
-            div.innerHTML = `<span class="${sender.toLowerCase()}">${sender}:</span> <pre>${escapeHtml(text)}</pre>`;
-        }
     }
 
     function escapeHtml(str) {
