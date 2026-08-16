@@ -5,6 +5,7 @@ import docker
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel
+from tool_parser import parse_and_execute_tools
 
 app = FastAPI()
 
@@ -38,7 +39,8 @@ Rules:
 """
 
 class ChatRequest(BaseModel):
-    prompt: str
+    message: str | None = None
+    prompt: str | None = None
 
 def execute_tool(tool_data: dict) -> str:
     """Executes file operations directly on the container's mounted user_data volume."""
@@ -82,11 +84,15 @@ def execute_tool(tool_data: dict) -> str:
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
+    user_message = req.message or req.prompt or ""
+    if not user_message:
+        return {"error": "No message provided."}
+
     payload = {
         "model": MODEL_NAME,
         "messages": [
             {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": req.prompt}
+            {"role": "user", "content": user_message}
         ],
         "stream": False,
         "options": {"num_gpu": 99}
@@ -101,7 +107,8 @@ async def chat(req: ChatRequest):
             res_data = response.json()
             
             raw_content = res_data.get("message", {}).get("content", "").strip()
-            
+            cleaned_response = parse_and_execute_tools(raw_content)
+
             # Check if LLM outputted a JSON tool request
             if raw_content.startswith("{") and raw_content.endswith("}"):
                 try:
@@ -117,9 +124,9 @@ async def chat(req: ChatRequest):
                         }
                 except json.JSONDecodeError:
                     pass # Not valid JSON tool call, treat as standard text output
-            
+
             return {
-                "response": raw_content,
+                "response": cleaned_response,
                 "metrics": {
                     "eval_count": res_data.get("eval_count", 0),
                     "prompt_eval_count": res_data.get("prompt_eval_count", 0)
