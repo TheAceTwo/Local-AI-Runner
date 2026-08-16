@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# Install system dependencies including the Docker CLI binary so your panel can run host commands
+# Install system dependencies including the Docker CLI binary
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     ca-certificates \
@@ -10,10 +10,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy requirements and install Python dependencies (added httpx)
-RUN pip install --no-cache-dir fastapi uvicorn requests pydantic httpx
+# Copy requirements and install Python dependencies
+RUN pip install --no-cache-dir fastapi uvicorn requests pydantic httpx docker
 
-# Copy your local script files
+# Copy local script files
 COPY server.py index.html /app/
 
 EXPOSE 7860

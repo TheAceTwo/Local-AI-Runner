@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Local AI Control Panel</title>
+    <!-- Chart.js CDN for resource graph rendering -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         body { font-family: 'Segoe UI', sans-serif; background: #121212; color: #e0e0e0; margin: 0; padding: 20px; display: flex; gap: 20px; }
         #sidebar { width: 280px; background: #1e1e1e; padding: 15px; border-radius: 8px; }
@@ -20,12 +21,12 @@
         .btn-action:hover { background: #4a4a4a; }
         pre { margin: 0; white-space: pre-wrap; word-break: break-word; }
 
-        /* Status Panel Floating Widget */
-        #status-panel {
+        /* Floating Panel Container (Status + Graph) */
+        #floating-widget {
             position: fixed;
             bottom: 15px;
             left: 15px;
-            width: 320px;
+            width: 340px;
             background: #1e1e1e;
             border: 1px solid #333;
             border-radius: 8px;
@@ -34,9 +35,37 @@
             font-size: 13px;
             z-index: 1000;
             overflow: hidden;
-            transition: all 0.3s ease;
         }
 
+        /* Expandable Graph Drawer (Above Status Bar) */
+        #graph-drawer {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease, padding 0.3s ease;
+            background: #181818;
+            padding: 0 12px;
+            border-bottom: 0px solid #2a2a2a;
+        }
+
+        #floating-widget.graph-expanded #graph-drawer {
+            max-height: 220px;
+            padding: 10px 12px;
+            border-bottom: 1px solid #2a2a2a;
+        }
+
+        #graph-toggle-btn {
+            background: #282828;
+            color: #aaa;
+            text-align: center;
+            font-size: 11px;
+            padding: 4px 0;
+            cursor: pointer;
+            user-select: none;
+            border-bottom: 1px solid #2d2d2d;
+        }
+        #graph-toggle-btn:hover { background: #333; color: #fff; }
+
+        /* Status Panel Styling */
         #status-header {
             background: #252526;
             padding: 8px 12px;
@@ -69,14 +98,14 @@
         #status-details {
             max-height: 0;
             overflow: hidden;
-            transition: max-height 0.3s ease-out, padding 0.3s ease;
+            transition: max-height 0.3s ease, padding 0.3s ease;
             background: #181818;
             padding: 0 12px;
             color: #aaa;
         }
 
-        #status-panel.expanded #status-details {
-            max-height: 200px;
+        #floating-widget.status-expanded #status-details {
+            max-height: 160px;
             padding: 10px 12px;
             border-top: 1px solid #2a2a2a;
         }
@@ -100,8 +129,19 @@
     <button id="sendBtn" onclick="sendMessage()">Send Request</button>
 </div>
 
-<!-- Bottom-Left Status Indicator Widget -->
-<div id="status-panel">
+<!-- Combined Floating Widget -->
+<div id="floating-widget">
+    <!-- Collapsible Graph Drawer -->
+    <div id="graph-drawer">
+        <canvas id="resourceChart" width="316" height="180"></canvas>
+    </div>
+
+    <!-- Graph Toggle Bar -->
+    <div id="graph-toggle-btn" onclick="toggleGraphPanel()">
+        <span id="graph-toggle-text">📈 Show Container Resource Graph</span>
+    </div>
+
+    <!-- Status Bar Header -->
     <div id="status-header" onclick="toggleStatusPanel()">
         <div>
             <span id="status-dot" class="status-dot"></span>
@@ -109,6 +149,8 @@
         </div>
         <span id="status-chevron">▲</span>
     </div>
+
+    <!-- Status Details Drawer -->
     <div id="status-details">
         <p>Model: <span id="stat-model">qwen2.5-coder:7b</span></p>
         <p>Status: <span id="stat-phase">Awaiting Input</span></p>
@@ -120,20 +162,96 @@
 <script>
     let timerInterval = null;
     let startTime = 0;
+    let chartInstance = null;
+    let statsInterval = null;
 
+    // Toggle Graph Panel
+    function toggleGraphPanel() {
+        const widget = document.getElementById('floating-widget');
+        const btnText = document.getElementById('graph-toggle-text');
+        widget.classList.toggle('graph-expanded');
+        
+        if (widget.classList.contains('graph-expanded')) {
+            btnText.innerText = '📉 Hide Container Resource Graph';
+            initChart();
+            fetchContainerStats();
+            if (!statsInterval) statsInterval = setInterval(fetchContainerStats, 3000);
+        } else {
+            btnText.innerText = '📈 Show Container Resource Graph';
+            if (statsInterval) { clearInterval(statsInterval); statsInterval = null; }
+        }
+    }
+
+    // Toggle Status Panel
     function toggleStatusPanel() {
-        const panel = document.getElementById('status-panel');
+        const widget = document.getElementById('floating-widget');
         const chevron = document.getElementById('status-chevron');
-        panel.classList.toggle('expanded');
-        chevron.innerText = panel.classList.contains('expanded') ? '▼' : '▲';
+        widget.classList.toggle('status-expanded');
+        chevron.innerText = widget.classList.contains('status-expanded') ? '▼' : '▲';
+    }
+
+    // Initialize Chart.js Horizontal Bar Chart
+    function initChart() {
+        if (chartInstance) return;
+        const ctx = document.getElementById('resourceChart').getContext('2d');
+        chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [
+                    {
+                        label: 'CPU %',
+                        data: [],
+                        backgroundColor: '#0078d4',
+                        borderRadius: 4
+                    },
+                    {
+                        label: 'RAM (MB)',
+                        data: [],
+                        backgroundColor: '#5cdb95',
+                        borderRadius: 4
+                    }
+                ]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: false,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { labels: { color: '#ccc', font: { size: 10 } } }
+                },
+                scales: {
+                    x: { ticks: { color: '#888', font: { size: 9 } }, grid: { color: '#2a2a2a' } },
+                    y: { ticks: { color: '#ccc', font: { size: 10 } }, grid: { display: false } }
+                }
+            }
+        });
+    }
+
+    // Fetch stats from FastAPI docker socket endpoint
+    async function fetchContainerStats() {
+        try {
+            const res = await fetch('/api/stats');
+            const data = await res.json();
+            if (data.status === 'success' && chartInstance) {
+                const labels = data.containers.map(c => c.name.length > 12 ? c.name.substring(0,10) + '..' : c.name);
+                const cpuData = data.containers.map(c => c.cpu_percent);
+                const memData = data.containers.map(c => c.memory_mb);
+
+                chartInstance.data.labels = labels;
+                chartInstance.data.datasets[0].data = cpuData;
+                chartInstance.data.datasets[1].data = memData;
+                chartInstance.update();
+            }
+        } catch (e) {
+            console.error("Failed to fetch container stats:", e);
+        }
     }
 
     function setStatus(phase, text, dotClass) {
         document.getElementById('status-text').innerText = text;
         document.getElementById('stat-phase').innerText = phase;
-        
-        const dot = document.getElementById('status-dot');
-        dot.className = 'status-dot ' + (dotClass || '');
+        document.getElementById('status-dot').className = 'status-dot ' + (dotClass || '');
     }
 
     function startTimer() {
@@ -146,9 +264,7 @@
         }, 1000);
     }
 
-    function stopTimer() {
-        clearInterval(timerInterval);
-    }
+    function stopTimer() { clearInterval(timerInterval); }
 
     async function sendMessage() {
         const input = document.getElementById('promptInput');
