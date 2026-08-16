@@ -10,8 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy requirements and install Python dependencies
-RUN pip install --no-cache-dir fastapi uvicorn requests pydantic
+# Copy requirements and install Python dependencies (added httpx)
+RUN pip install --no-cache-dir fastapi uvicorn requests pydantic httpx
 
 # Copy your local script files
 COPY server.py index.html /app/

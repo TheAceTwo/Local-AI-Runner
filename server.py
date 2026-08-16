@@ -1,14 +1,13 @@
 import os
-import requests
+import httpx
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 app = FastAPI()
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434/api/chat")
-MODEL_NAME = "qwen2.5-coder:7b"  # Or llama3.1:8b
+MODEL_NAME = os.getenv("MODEL_NAME", "qwen2.5-coder:7b")
 
 # SYSTEM SAFETY PROFILE RULES
 SYSTEM_PROMPT = """
@@ -25,18 +24,36 @@ class ChatRequest(BaseModel):
 
 @app.post("/api/chat")
 async def chat(req: ChatRequest):
+    # Formatted correctly for Ollama's /api/chat endpoint
     payload = {
         "model": MODEL_NAME,
-        "prompt": req.prompt,
-        "system": SYSTEM_PROMPT,
-        "stream": False
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": req.prompt}
+        ],
+        "stream": False,
+        "options": {
+            "num_gpu": 99
+        }
     }
+    
+    # 120 second timeout prevents the frontend from throwing "No response from model"
+    timeout = httpx.Timeout(120.0, connect=10.0)
+
     try:
-        response = requests.post(OLLAMA_URL, json=payload)
-        res_data = response.json()
-        return {"response": res_data.get("response", "No response from model.")}
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(OLLAMA_URL, json=payload)
+            response.raise_for_status()
+            res_data = response.json()
+            
+            # Extract content from chat response format
+            content = res_data.get("message", {}).get("content", "No response from model.")
+            return {"response": content}
+            
+    except httpx.RequestError as e:
+        return {"response": f"Network error communicating with Ollama: {str(e)}"}
     except Exception as e:
-        return {"response": f"Error communicating with Ollama: {str(e)}"}
+        return {"response": f"Error: {str(e)}"}
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
