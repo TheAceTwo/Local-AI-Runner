@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434/api/chat")
 MODEL_NAME = "qwen2.5-coder:7b"  # Or llama3.1:8b
 
 # SYSTEM SAFETY PROFILE RULES
