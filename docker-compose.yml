@@ -22,7 +22,9 @@ services:
 
   # 2. Custom AI Control Panel
   ai_control_panel:
-    image: ai-control-panel:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: ai_control_panel
     restart: unless-stopped
     ports:
