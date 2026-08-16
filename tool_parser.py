@@ -4,11 +4,9 @@ import re
 from pathlib import Path
 
 def execute_tool_dict(data: dict) -> str:
-    """Executes supported file system tools and returns a status string."""
     tool = data.get("tool")
     path_str = data.get("path", "")
 
-    # Path Safety Guard matching server system prompt
     if not path_str.startswith("/user_data"):
         return "⚠️ **Error:** Path access restricted outside of mounted `/user_data` volumes."
 
@@ -47,10 +45,8 @@ def execute_tool_dict(data: dict) -> str:
         return f"⚠️ **Execution Failed:** {str(e)}"
 
 def parse_and_execute_tools(response_text: str) -> str:
-    """Detects raw or markdown-wrapped JSON tool calls and replaces them with execution results."""
     text = response_text.strip()
 
-    # 1. Handle Raw JSON Responses (Single or Multi-line)
     if text.startswith("{") and text.endswith("}"):
         try:
             data = json.loads(text)
@@ -59,7 +55,6 @@ def parse_and_execute_tools(response_text: str) -> str:
         except json.JSONDecodeError:
             pass
 
-    # 2. Handle Markdown Code Blocks (```json ... ```)
     pattern = r"```(?:json)?\s*(\{\s*\"tool\".*?\})\s*```"
     matches = re.finditer(pattern, response_text, re.DOTALL)
     

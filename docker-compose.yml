@@ -13,14 +13,14 @@ services:
       - OLLAMA_NUM_PARALLEL=1
     volumes:
       - ollama_data:/root/.ollama
-    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5-coder:7b && tail -f /dev/null"]
+    entrypoint: [ "/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5-coder:7b && tail -f /dev/null" ]
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: 1
-              capabilities: [gpu]
+              capabilities: [ gpu ]
 
   # 2. Custom AI Control Panel
   ai_control_panel:
@@ -37,7 +37,6 @@ services:
       - DOCKER_HOST=unix:///var/run/docker.sock
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - app_data:/app
       # --- USER DIRECTORIES (PORTABLE NAMED VOLUMES) ---
       - user_desktop:/user_data/Desktop
       - user_downloads:/user_data/Downloads
