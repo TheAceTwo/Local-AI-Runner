@@ -13,7 +13,6 @@ services:
       - OLLAMA_NUM_PARALLEL=1
     volumes:
       - ollama_data:/root/.ollama
-    # Automatically pulls the model in the background after starting the server
     entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5-coder:7b && tail -f /dev/null"]
     deploy:
       resources:
@@ -38,16 +37,24 @@ services:
       - DOCKER_HOST=unix:///var/run/docker.sock
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - C:/Docker/AI-control-panel:/app
-      # --- USER DIRECTORIES (READ/WRITE/EDIT/DELETE) ---
-      - ${USERPROFILE}/Desktop:/user_data/Desktop
-      - ${USERPROFILE}/Downloads:/user_data/Downloads
-      - ${USERPROFILE}/Documents:/user_data/Documents
-      - ${USERPROFILE}/Pictures:/user_data/Pictures
-      - ${USERPROFILE}/Videos:/user_data/Videos
-      - ${USERPROFILE}/Music:/user_data/Music
+      - app_data:/app
+      # --- USER DIRECTORIES (PORTABLE NAMED VOLUMES) ---
+      - user_desktop:/user_data/Desktop
+      - user_downloads:/user_data/Downloads
+      - user_documents:/user_data/Documents
+      - user_pictures:/user_data/Pictures
+      - user_videos:/user_data/Videos
+      - user_music:/user_data/Music
     depends_on:
       - ollama
 
+# Persistent volume definitions managed automatically by Docker
 volumes:
   ollama_data:
+  app_data:
+  user_desktop:
+  user_downloads:
+  user_documents:
+  user_pictures:
+  user_videos:
+  user_music:
