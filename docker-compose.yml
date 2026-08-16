@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  # 1. Local LLM Engine (Nvidia GPU Acceleration)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: local_llm_engine
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # 2. Custom AI Control Panel
+  ai_control_panel:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ai_control_panel
+    restart: unless-stopped
+    ports:
+      - "7860:7860"
+    environment:
+      - OLLAMA_URL=http://ollama:11434/api/chat
+      - MODEL_NAME=qwen2.5-coder:7b
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    volumes:
+      # Exposes host Docker daemon so your panel can manage host containers
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Mounts host directory for direct file persistence
+      - C:/Docker/AI-control-panel:/app
+    depends_on:
+      - ollama
+
+volumes:
+  ollama_data:
