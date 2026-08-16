@@ -10,6 +10,8 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    # Automatically pulls the model in the background after starting the server
+    entrypoint: ["/bin/sh", "-c", "ollama serve & sleep 5 && ollama pull qwen2.5-coder:7b && tail -f /dev/null"]
     deploy:
       resources:
         reservations:
@@ -20,9 +22,7 @@ services:
 
   # 2. Custom AI Control Panel
   ai_control_panel:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: ai-control-panel:latest
     container_name: ai_control_panel
     restart: unless-stopped
     ports:
@@ -32,9 +32,7 @@ services:
       - MODEL_NAME=qwen2.5-coder:7b
       - DOCKER_HOST=unix:///var/run/docker.sock
     volumes:
-      # Exposes host Docker daemon so your panel can manage host containers
       - /var/run/docker.sock:/var/run/docker.sock
-      # Mounts host directory for direct file persistence
       - C:/Docker/AI-control-panel:/app
     depends_on:
       - ollama
