@@ -39,6 +39,13 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - C:/Docker/AI-control-panel:/app
+      # --- USER DIRECTORIES (READ/WRITE/EDIT/DELETE) ---
+      - ${USERPROFILE}/Desktop:/user_data/Desktop
+      - ${USERPROFILE}/Downloads:/user_data/Downloads
+      - ${USERPROFILE}/Documents:/user_data/Documents
+      - ${USERPROFILE}/Pictures:/user_data/Pictures
+      - ${USERPROFILE}/Videos:/user_data/Videos
+      - ${USERPROFILE}/Music:/user_data/Music
     depends_on:
       - ollama
 
